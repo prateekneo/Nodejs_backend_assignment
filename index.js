@@ -2,6 +2,8 @@ let express = require('express')
 let app = express()
 var cors = require('cors')
 let Mongo = require('mongodb').MongoClient;
+var moment = require('moment');
+moment().format();
 app.use(express.json())
 
 
@@ -44,14 +46,7 @@ async function getNextSequence(name) {
         console.log(obj);
         console.log(obj.seq);
         return obj.seq
-    })
-   
-    // .exec(function (err, docs) {
-    //     console.log(typeof(docs.seq));
-    //     id= docs.seq;
-    // })
-
-    
+    })   
  }
 
  async function create(){
@@ -74,7 +69,7 @@ app.post('/create', (req, res) => {
                 address : req.body.address,
                 profession : req.body.profession
             }, function (err, arr) {
-                if (err) return console.log(err)
+                if (err) return res(500).send("Enter the valid")
                 else
                     resolve("inserted");
               });
@@ -88,7 +83,7 @@ app.post('/create', (req, res) => {
         
     }).then((str)=>{
         if(str === 'inserted')
-            res.send("saved");
+            res.status(200).send("saved");
     }).catch((err) => {
         console.log(err);
     })
@@ -103,7 +98,7 @@ async function getdata(userid){
     }, function(err, arr){
         if(err) return err;
         else
-            return arr;
+            return arr
     })
 }
 
@@ -112,7 +107,12 @@ app.get('/get/:userid', (req, res) => {
     let userid = req.params.userid;
     
     getdata(userid).then((arr)=>{
-        res.send(arr);
+        if(arr.length === 0){
+            res.status(500).send("Enter Valid Userid");
+        }
+        else{
+            res.status(200).send(arr);
+        }
     })
 })
 
@@ -120,19 +120,20 @@ async function edit(obj){
 
     var user = db.model('users', userSchema);
 
-    return await user.findOneAndUpdate({id : obj.id}, {
+    return await user.updateOne({id : obj.id}, {
                 $set : {
                     name : obj.name,
                     dob : obj.dob,
-                    gender : obj.gender,
+                    gender : obj.gender,    
                     address : obj.address,
                     profession : obj.profession
                 }
-            },{new : true}, function(err, arr){
+            }, function(err, obj){
         if(err){
             console.log(err);
         } else {
-            return arr;
+            console.log(obj)
+            return obj;
         }
     })
 }
@@ -141,8 +142,12 @@ app.post('/edit', (req, res) => {
 
     var obj = req.body;
     console.log(obj);
-    edit(obj).then((str) =>{
-            res.send(str);
+    edit(obj).then((obj) =>{
+        if(obj.nModified === 0)
+            res.status(404).send("Please give a valid object. UserId is invalid");
+        else{
+            res.status(200).send("User is Updated");
+        }
     })
 })
 
@@ -150,9 +155,12 @@ async function del(obj){
 
     var user = db.model('users', userSchema);
 
-    return await user.findOneAndDelete({id : obj.id}, function(err, arr){
+    return await user.deleteOne({id : obj.id}, function(err, arr){
         if(err){
-            console.log(err);
+            return err;
+        }
+        else{
+            return arr;
         }
     })
 }
@@ -161,150 +169,86 @@ app.post('/delete', (req, res) => {
 
     var obj = req.body;
     console.log(obj);
-    del(obj).then((str) =>{
-        db.close();
-        res.send(str);
+    del(obj).then((ob) =>{
+
+        if(ob.deletedCount === 1){
+            res.status(404).send("User Not Found");
+        } else{
+            res.status(500).send("User Deleted")
+        }
     })
 })
 
-function getYears(x) {
-    return Math.floor(x / 1000 / 60 / 60 / 24 / 365);
-}
-
-async function filterAge(age){
+async function filterQuery(query){
 
     var user = db.model('users', userSchema);
 
-        let promises = [];
-        let docs = await user.find({});
-        
-        docs.forEach((doc) => {
-          let n = Date.now();
-          let d = new Date(doc.dob);
-          doc.set('age', getYears(n - d));
-          promises.push(doc.save());
-        });
-        
-        Promise.all(promises).then((saved) => {
-          console.log(saved);
-        });
-        
-}
-
-async function filterName(name){
-
-    var user = db.model('users', userSchema);
-
-    return await user.find({name : name}, (err, arr) => {
-        if(err){
-            return err;
-        }
-        else{
-            console.log(arr);
-            return arr;
-            }
-        })
-    }
-
-async function filterGender(gender){
-
-    var user = db.model('users', userSchema);
-
-    return await user.find({gender : gender}, (err, arr) => {
+    return await user.find(query, (err, arr) => {
         if(err)
-            return err;
+            return err
         else{
             console.log(arr);
             return arr;
             }
         })
     }
-
-async function filterProfession(profession){
-
-    var user = db.model('users', userSchema);
-
-    return new Promise( resolve => {
-        
-        user.find({profession : profession}, (err, arr) => {
-            console.log(arr);
-            return arr;
-        })
-    })
-
-}
 
 app.get('/filter', (req, res) => {
 
     let query = req.query;
-    //let c = Object.keys(query).length;
-    let a = [];
+    let p = Object.keys(query);
+
+    console.log(query);
+
+    let f = 0;
+    p.forEach((value) => {
+        if(value === 'age' || value === 'name' || value === 'gender' || value === 'profession'){
+           
+        } else {
+            f=1;
+        }
+    })
+    
+    if(f===0){
+        
         if(query.hasOwnProperty('age')){
             
-            filterAge(query.age).then({
-
+            var age = parseInt(query.age) * 365 * 24 * 60 * 60 * 1000; //in Millis
+            console.log(typeof(age) + age);
+            var dateOfBirth = new Date(new Date().getTime() - age).getFullYear().toString();
+        
+            let obj = {
+                dob : { $regex: dateOfBirth , $options : 'i'}
+            }
+            if(query.hasOwnProperty('name')){
+                obj.name = query.name;
+            }
+            if(query.hasOwnProperty('gender')){
+                obj.gender = query.gender;
+            }
+            if(query.hasOwnProperty('profession')){
+                obj.profession = query.profession;
+            }
+            // filterAge(query.age).then((arr) => {
+            //     res.send(arr);
+            // })
+            filterQuery(obj).then((arr)=> {
+                console.log(arr);
+                res.send(arr);
             })
-        }
-        if(query.hasOwnProperty('name')){
+        } else{
+            filterQuery(query).then((arr)=> {
 
-            filterName(query.name).then((arr) => {
-                a = arr;
-                //console.log(arr);
-                console.log(a);
-                a.forEach((value,index) => {
-                    if(query.hasOwnProperty('gender')){
-                        if(value.gender !== query.gender){
-                            a.splice(index, 1);
-                        }
-                    }
-                    if(query.hasOwnProperty('profession')){
-                        if (value.profession !== query.profession){
-                            a.splice(index, 1);
-                        }
-                    }
-                })
+                if(arr.length === 0){
+                    res.status(404).send("does not exist");
+                }
+                else{
+                    console.log(arr);
+                    res.status(200).send(arr);
+                }
                 
-                res.send(a); 
-            })
-        }
-        else if(query.hasOwnProperty('gender')){
-            console.log('gender');
-            filterGender(query.gender).then((arr) => {
-                a.push(...arr);
-                console.log(a);
-                a.forEach((value,index) => {
-                    if(query.hasOwnProperty('name')){
-                        if(value.name !== query.name){
-                            a.splice(index, 1);
-                        }
-                    } else if(query.hasOwnProperty('profession')){
-                        if (value.profession !== query.profession){
-                            a.splice(index, 1);
-                        }
-                    }
-                })
-                console.log(a);
-                res.send(a);
-            })
-        }
-        else if(query.hasOwnProperty('profession')){
-
-            filterProfession(query.profession).then((arr) => {
-                a.push(...arr);
-                a.forEach((value,index) => {
-                    if(query.hasOwnProperty('gender')){
-                        if(value.gender !== query.gender){
-                            a.splice(index, 1);
-                        }
-                    } else if(query.hasOwnProperty('name')){
-                        if (value.name !== query.name){
-                            a.splice(index, 1);
-                        }
-                    }
-                })
-                res.send(a)
             })
         }
     }
-)
+    })
 app.listen(3005)
